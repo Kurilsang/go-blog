@@ -1,9 +1,10 @@
 package config
 
 import (
-	"github.com/spf13/viper"
-	"log"
 	"go_test/global"
+	"log"
+
+	"github.com/spf13/viper"
 )
 
 var AppConfig *Config
@@ -42,4 +43,5 @@ func InitConfig() {
 	}
 
 	global.DB = InitDB()
-} 
+	global.RedisDB = InitRedis()
+}

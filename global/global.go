@@ -1,5 +1,9 @@
 package global
 
-import "gorm.io/gorm"
+import (
+	"github.com/go-redis/redis/v8"
+	"gorm.io/gorm"
+)
 
-var DB *gorm.DB 
+var DB *gorm.DB
+var RedisDB *redis.Client
