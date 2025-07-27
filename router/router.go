@@ -35,18 +35,18 @@ func RegisterRoutes(r *gin.Engine) {
 		// GET http://localhost:8080/api/biz/hello
 		biz.GET("/hello", func(c *gin.Context) {
 			c.JSON(200, gin.H{
-				"name": config.AppConfig.Name,
-				"port": config.AppConfig.Port,
+				"name": config.GetAppConfig().Name,
+				"port": config.GetAppConfig().Port,
 			})
 		})
 		// GET http://localhost:8080/api/biz/info
 		biz.GET("/info", func(c *gin.Context) {
 			c.JSON(200, gin.H{
-				"host":     config.DbConfig.Host,
-				"port":     config.DbConfig.Port,
-				"user":     config.DbConfig.User,
-				"password": config.DbConfig.Password,
-				"name":     config.DbConfig.Name,
+				"host":     config.GetDBConfig().Host,
+				"port":     config.GetDBConfig().Port,
+				"user":     config.GetDBConfig().User,
+				"password": config.GetDBConfig().Password,
+				"name":     config.GetDBConfig().Name,
 			})
 		})
 		// 汇率相关接口

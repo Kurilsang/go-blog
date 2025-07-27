@@ -3,13 +3,16 @@ package config
 import (
 	"go_test/global"
 	"log"
+	"sync/atomic"
 
 	"github.com/spf13/viper"
 )
 
-var AppConfig *Config
-var DbConfig *DBConfig
-var CacheConf *CacheConfig
+var (
+	appConfig   atomic.Value // *Config
+	dbConfig    atomic.Value // *DBConfig
+	cacheConfig atomic.Value // *CacheConfig
+)
 
 type Config struct {
 	Name string `mapstructure:"name"`
@@ -29,6 +32,30 @@ type CacheConfig struct {
 	LikeExpire    int `mapstructure:"like_expire"`
 }
 
+// GetAppConfig 原子读取应用配置
+func GetAppConfig() *Config {
+	if config := appConfig.Load(); config != nil {
+		return config.(*Config)
+	}
+	return nil
+}
+
+// GetDBConfig 原子读取数据库配置
+func GetDBConfig() *DBConfig {
+	if config := dbConfig.Load(); config != nil {
+		return config.(*DBConfig)
+	}
+	return nil
+}
+
+// GetCacheConfig 原子读取缓存配置
+func GetCacheConfig() *CacheConfig {
+	if config := cacheConfig.Load(); config != nil {
+		return config.(*CacheConfig)
+	}
+	return nil
+}
+
 func InitConfig() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
@@ -38,21 +65,25 @@ func InitConfig() {
 		log.Fatalf("读取配置文件失败: %v", err)
 	}
 
-	AppConfig = &Config{}
-	if err := viper.UnmarshalKey("app", AppConfig); err != nil {
+	// 解析并原子存储配置
+	app := &Config{}
+	if err := viper.UnmarshalKey("app", app); err != nil {
 		log.Fatalf("解析应用配置失败: %v", err)
 	}
+	appConfig.Store(app)
 
-	DbConfig = &DBConfig{}
-	if err := viper.UnmarshalKey("db", DbConfig); err != nil {
+	db := &DBConfig{}
+	if err := viper.UnmarshalKey("db", db); err != nil {
 		log.Fatalf("解析数据库配置失败: %v", err)
 	}
+	dbConfig.Store(db)
 
-	CacheConf = &CacheConfig{}
-	if err := viper.UnmarshalKey("cache", CacheConf); err != nil {
+	cache := &CacheConfig{}
+	if err := viper.UnmarshalKey("cache", cache); err != nil {
 		log.Fatalf("解析缓存配置失败: %v", err)
 	}
+	cacheConfig.Store(cache)
 
-	global.DB = InitDB()
-	global.RedisDB = InitRedis()
+	global.InitDB(InitDB())
+	global.InitRedis(InitRedis())
 }

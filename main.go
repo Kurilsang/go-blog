@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"go_test/config"
 	"go_test/model"
 	"go_test/router"
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -18,6 +19,6 @@ func main() {
 
 	router.RegisterRoutes(ginServer)
 
-	addr := fmt.Sprintf(":%d", config.AppConfig.Port)
+	addr := fmt.Sprintf(":%d", config.GetAppConfig().Port)
 	ginServer.Run(addr)
 }
