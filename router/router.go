@@ -4,11 +4,23 @@ import (
 	"go_test/config"
 	"go_test/controller"
 	"go_test/middleware"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 func RegisterRoutes(r *gin.Engine) {
+	// 添加CORS中间件，允许所有跨域请求
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowHeaders:     []string{"*"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	api := r.Group("/api")
 	{
 		// 认证相关接口（不需要JWT拦截器）

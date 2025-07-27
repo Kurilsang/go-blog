@@ -14,3 +14,7 @@ redis:
   port: 6379
   password: ""
   db: 0
+
+cache:
+  article_expire: 600
+  like_expire: 3600

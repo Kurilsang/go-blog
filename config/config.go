@@ -9,6 +9,7 @@ import (
 
 var AppConfig *Config
 var DbConfig *DBConfig
+var CacheConf *CacheConfig
 
 type Config struct {
 	Name string `mapstructure:"name"`
@@ -21,6 +22,11 @@ type DBConfig struct {
 	User     string `mapstructure:"user"`
 	Password string `mapstructure:"password"`
 	Name     string `mapstructure:"name"`
+}
+
+type CacheConfig struct {
+	ArticleExpire int `mapstructure:"article_expire"`
+	LikeExpire    int `mapstructure:"like_expire"`
 }
 
 func InitConfig() {
@@ -40,6 +46,11 @@ func InitConfig() {
 	DbConfig = &DBConfig{}
 	if err := viper.UnmarshalKey("db", DbConfig); err != nil {
 		log.Fatalf("解析数据库配置失败: %v", err)
+	}
+
+	CacheConf = &CacheConfig{}
+	if err := viper.UnmarshalKey("cache", CacheConf); err != nil {
+		log.Fatalf("解析缓存配置失败: %v", err)
 	}
 
 	global.DB = InitDB()
