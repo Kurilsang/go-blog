@@ -2,9 +2,9 @@ package utils
 
 import (
 	"errors"
-	"github.com/golang-j
+	"time"
+
 	"github.com/golang-jwt/jwt/v4"
-	"errors"
 )
 
 var jwtKey = []byte("your_secret_key")
@@ -12,8 +12,8 @@ var jwtKey = []byte("your_secret_key")
 // GenerateJWT 生成JWT令牌
 func GenerateJWT(username string) (string, error) {
 	claims := jwt.MapClaims{
+		"username": username,
 		"exp":      time.Now().Add(24 * time.Hour).Unix(),
-		"exp": time.Now().Add(24 * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtKey)
@@ -36,6 +36,5 @@ func ParseJWT(tokenString string) (string, error) {
 		}
 		return "", errors.New("用户名不存在")
 	}
+	return "", errors.New("无效的token")
 }
-
-} 
