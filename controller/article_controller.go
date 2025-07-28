@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"go_test/global"
@@ -25,6 +26,31 @@ var (
 	cacheMutex      sync.RWMutex
 )
 
+// generatePaginationCacheKey 生成分页查询的缓存键
+func generatePaginationCacheKey(page, pageSize int, order, keyword string) string {
+	// 构建缓存键字符串
+	keyStr := fmt.Sprintf("page:%d_size:%d_order:%s_keyword:%s", page, pageSize, order, keyword)
+	// 使用MD5哈希生成短键名
+	hash := md5.Sum([]byte(keyStr))
+	return fmt.Sprintf("%s:%x", global.CacheKeyArticlesPagination, hash)
+}
+
+// clearPaginationCache 清除分页相关的所有缓存
+func clearPaginationCache() {
+	// 使用模式匹配删除所有分页缓存
+	pattern := global.CacheKeyArticlesPagination + ":*"
+	keys, err := global.RedisDB.Keys(articleCtxRedis, pattern).Result()
+	if err != nil {
+		fmt.Printf("获取缓存键失败: %v\n", err)
+		return
+	}
+	if len(keys) > 0 {
+		if err := global.RedisDB.Del(articleCtxRedis, keys...).Err(); err != nil {
+			fmt.Printf("清除分页缓存失败: %v\n", err)
+		}
+	}
+}
+
 // 创建文章
 func CreateArticle(ctx *gin.Context) {
 	var req ArticleRequest
@@ -44,11 +70,12 @@ func CreateArticle(ctx *gin.Context) {
 		return
 	}
 
-	// 清除缓存
+	// 清除原有的全量文章缓存和分页缓存
 	if err := global.RedisDB.Del(articleCtxRedis, cacheKey).Err(); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		fmt.Printf("警告: 创建文章成功但清除全量缓存失败: %v\n", err)
 	}
+	// 清除所有分页相关缓存
+	clearPaginationCache()
 
 	ctx.JSON(http.StatusCreated, ArticleVO{
 		ID:      article.ID,
@@ -121,96 +148,149 @@ func GetArticles(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, vos)
 }
 
-// 分页查询文章 - 使用新的分页工具
+// 分页查询文章 - 支持可选关键词搜索（带Redis缓存）
 func GetArticlesWithPagination(ctx *gin.Context) {
 	// 使用分页工具从上下文解析分页参数
 	paginate := utils.PaginateFromContext(ctx)
 
-	// 查询分页数据
-	var articles []model.Article
-	if err := utils.PaginateWithTotal(global.DB, &model.Article{}, paginate, &articles); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 转换为VO
-	vos := make([]ArticleVO, 0, len(articles))
-	for _, a := range articles {
-		vos = append(vos, ArticleVO{
-			ID:      a.ID,
-			Title:   a.Title,
-			Content: a.Content,
-			Preview: a.Preview,
-			Created: a.CreatedAt.Format("2006-01-02 15:04:05"),
-		})
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"articles":   vos,
-		"pagination": paginate.GetPaginationInfo(),
-	})
-}
-
-// 搜索文章
-func SearchArticles(ctx *gin.Context) {
+	// 获取可选的关键词参数
 	keyword := ctx.Query("keyword")
-	if keyword == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "搜索关键词不能为空"})
-		return
-	}
-
-	// 去除关键词首尾空格
 	keyword = strings.TrimSpace(keyword)
-	if keyword == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "搜索关键词不能为空"})
+
+	// 生成缓存键
+	cacheKey := generatePaginationCacheKey(paginate.Page, paginate.PageSize, paginate.Order, keyword)
+
+	// 先尝试读缓存
+	cachedData, err := global.RedisDB.Get(articleCtxRedis, cacheKey).Result()
+
+	if err == redis.Nil {
+		// 缓存未命中，获取写锁防止缓存击穿
+		cacheMutex.Lock()
+		defer cacheMutex.Unlock()
+
+		// 双重检查，防止在获取锁期间其他goroutine已经更新了缓存
+		cachedData, err = global.RedisDB.Get(articleCtxRedis, cacheKey).Result()
+		if err == redis.Nil {
+			// 缓存仍未命中，从数据库查询
+			// 构建查询
+			query := global.DB.Model(&model.Article{})
+
+			// 如果有关键词，添加搜索条件
+			if keyword != "" {
+				searchPattern := "%" + keyword + "%"
+				query = query.Where("title LIKE ? OR content LIKE ?", searchPattern, searchPattern)
+			}
+
+			// 执行分页查询
+			var articles []model.Article
+			if err := utils.PaginateWithCondition(query, paginate, &articles); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			// 转换为VO
+			vos := make([]ArticleVO, 0, len(articles))
+			for _, a := range articles {
+				// 如果有关键词，进行高亮处理
+				title := a.Title
+				content := a.Content
+				if keyword != "" {
+					title = highlightKeyword(a.Title, keyword)
+					content = highlightKeyword(a.Content, keyword)
+				}
+
+				vos = append(vos, ArticleVO{
+					ID:      a.ID,
+					Title:   title,
+					Content: content,
+					Preview: a.Preview,
+					Created: a.CreatedAt.Format("2006-01-02 15:04:05"),
+				})
+			}
+
+			// 构建响应
+			response := gin.H{
+				"articles":   vos,
+				"pagination": paginate.GetPaginationInfo(),
+			}
+
+			// 如果有关键词，添加搜索相关信息
+			if keyword != "" {
+				response["keyword"] = keyword
+				response["is_search"] = true
+			}
+
+			// 将数据存入缓存
+			responseJSON, err := json.Marshal(response)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "序列化响应失败: " + err.Error()})
+				return
+			}
+
+			// 设置缓存，使用全局配置的过期时间
+			if err := global.RedisDB.Set(articleCtxRedis, cacheKey, responseJSON, time.Duration(global.CacheExpireArticles)*time.Second).Err(); err != nil {
+				// 缓存写入失败不影响业务，只记录日志
+				fmt.Printf("写入缓存失败: %v\n", err)
+			}
+
+			ctx.JSON(http.StatusOK, response)
+			return
+		}
+	} else if err != nil {
+		// Redis连接错误，直接查数据库
+		fmt.Printf("Redis连接错误: %v\n", err)
+		// 降级到数据库查询
+		query := global.DB.Model(&model.Article{})
+		if keyword != "" {
+			searchPattern := "%" + keyword + "%"
+			query = query.Where("title LIKE ? OR content LIKE ?", searchPattern, searchPattern)
+		}
+
+		var articles []model.Article
+		if err := utils.PaginateWithCondition(query, paginate, &articles); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		vos := make([]ArticleVO, 0, len(articles))
+		for _, a := range articles {
+			title := a.Title
+			content := a.Content
+			if keyword != "" {
+				title = highlightKeyword(a.Title, keyword)
+				content = highlightKeyword(a.Content, keyword)
+			}
+
+			vos = append(vos, ArticleVO{
+				ID:      a.ID,
+				Title:   title,
+				Content: content,
+				Preview: a.Preview,
+				Created: a.CreatedAt.Format("2006-01-02 15:04:05"),
+			})
+		}
+
+		response := gin.H{
+			"articles":   vos,
+			"pagination": paginate.GetPaginationInfo(),
+		}
+
+		if keyword != "" {
+			response["keyword"] = keyword
+			response["is_search"] = true
+		}
+
+		ctx.JSON(http.StatusOK, response)
 		return
 	}
 
-	// 构建搜索条件，使用LIKE进行模糊搜索
-	searchPattern := "%" + keyword + "%"
-
-	// 查询标题匹配的文章（优先级高）
-	var titleMatchedArticles []model.Article
-	if err := global.DB.Where("title LIKE ?", searchPattern).Find(&titleMatchedArticles).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// 缓存命中，直接返回缓存数据
+	var response gin.H
+	if err := json.Unmarshal([]byte(cachedData), &response); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "反序列化缓存数据失败: " + err.Error()})
 		return
 	}
-
-	// 查询内容匹配但标题不匹配的文章（优先级低）
-	var contentMatchedArticles []model.Article
-	if err := global.DB.Where("content LIKE ? AND title NOT LIKE ?", searchPattern, searchPattern).Find(&contentMatchedArticles).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 合并结果，标题匹配的排在前面
-	allArticles := make([]model.Article, 0, len(titleMatchedArticles)+len(contentMatchedArticles))
-	allArticles = append(allArticles, titleMatchedArticles...)
-	allArticles = append(allArticles, contentMatchedArticles...)
-
-	// 转换为VO
-	vos := make([]ArticleVO, 0, len(allArticles))
-	for _, a := range allArticles {
-		// 高亮关键词（简单实现）
-		highlightedTitle := highlightKeyword(a.Title, keyword)
-		highlightedContent := highlightKeyword(a.Content, keyword)
-
-		vos = append(vos, ArticleVO{
-			ID:      a.ID,
-			Title:   highlightedTitle,
-			Content: highlightedContent,
-			Preview: a.Preview,
-			Created: a.CreatedAt.Format("2006-01-02 15:04:05"),
-		})
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"keyword":         keyword,
-		"total":           len(vos),
-		"title_matched":   len(titleMatchedArticles),
-		"content_matched": len(contentMatchedArticles),
-		"articles":        vos,
-	})
+	ctx.JSON(http.StatusOK, response)
 }
 
 // 批量删除文章
@@ -250,8 +330,10 @@ func BatchDeleteArticles(ctx *gin.Context) {
 	// 清除缓存以确保数据一致性
 	if err := global.RedisDB.Del(articleCtxRedis, cacheKey).Err(); err != nil {
 		// 删除成功但清除缓存失败，记录错误但不影响删除操作
-		fmt.Printf("警告: 删除文章成功但清除缓存失败: %v\n", err)
+		fmt.Printf("警告: 删除文章成功但清除全量缓存失败: %v\n", err)
 	}
+	// 清除所有分页相关缓存
+	clearPaginationCache()
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"message":       fmt.Sprintf("成功删除%d篇文章", len(req.IDs)),
