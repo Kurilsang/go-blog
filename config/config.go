@@ -12,6 +12,7 @@ var (
 	appConfig   atomic.Value // *Config
 	dbConfig    atomic.Value // *DBConfig
 	cacheConfig atomic.Value // *CacheConfig
+	jwtConfig   atomic.Value // *JWTConfig
 )
 
 type Config struct {
@@ -20,16 +21,24 @@ type Config struct {
 }
 
 type DBConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	User     string `mapstructure:"user"`
-	Password string `mapstructure:"password"`
-	Name     string `mapstructure:"name"`
+	Host            string `mapstructure:"host"`
+	Port            int    `mapstructure:"port"`
+	User            string `mapstructure:"user"`
+	Password        string `mapstructure:"password"`
+	Name            string `mapstructure:"name"`
+	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
+	MaxOpenConns    int    `mapstructure:"max_open_conns"`
+	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"`
 }
 
 type CacheConfig struct {
 	ArticleExpire int `mapstructure:"article_expire"`
 	LikeExpire    int `mapstructure:"like_expire"`
+}
+
+type JWTConfig struct {
+	Secret      string `mapstructure:"secret"`
+	ExpireHours int    `mapstructure:"expire_hours"`
 }
 
 // GetAppConfig 原子读取应用配置
@@ -52,6 +61,14 @@ func GetDBConfig() *DBConfig {
 func GetCacheConfig() *CacheConfig {
 	if config := cacheConfig.Load(); config != nil {
 		return config.(*CacheConfig)
+	}
+	return nil
+}
+
+// GetJWTConfig 原子读取JWT配置
+func GetJWTConfig() *JWTConfig {
+	if config := jwtConfig.Load(); config != nil {
+		return config.(*JWTConfig)
 	}
 	return nil
 }
@@ -83,6 +100,12 @@ func InitConfig() {
 		log.Fatalf("解析缓存配置失败: %v", err)
 	}
 	cacheConfig.Store(cache)
+
+	jwt := &JWTConfig{}
+	if err := viper.UnmarshalKey("jwt", jwt); err != nil {
+		log.Fatalf("解析JWT配置失败: %v", err)
+	}
+	jwtConfig.Store(jwt)
 
 	global.InitDB(InitDB())
 	global.InitRedis(InitRedis())

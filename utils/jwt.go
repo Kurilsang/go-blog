@@ -2,30 +2,39 @@ package utils
 
 import (
 	"errors"
+	"go_test/config"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 )
 
-var jwtKey = []byte("your_secret_key")
-
 // GenerateJWT 生成JWT令牌
 func GenerateJWT(username string) (string, error) {
+	jwtConfig := config.GetJWTConfig()
+	if jwtConfig == nil {
+		return "", errors.New("JWT配置未初始化")
+	}
+
 	claims := jwt.MapClaims{
 		"username": username,
-		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+		"exp":      time.Now().Add(time.Duration(jwtConfig.ExpireHours) * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtKey)
+	return token.SignedString([]byte(jwtConfig.Secret))
 }
 
 // ParseJWT 校验并解析JWT令牌，返回用户名和错误信息
 func ParseJWT(tokenString string) (string, error) {
+	jwtConfig := config.GetJWTConfig()
+	if jwtConfig == nil {
+		return "", errors.New("JWT配置未初始化")
+	}
+
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("签名方法不正确")
 		}
-		return jwtKey, nil
+		return []byte(jwtConfig.Secret), nil
 	})
 	if err != nil {
 		return "", err

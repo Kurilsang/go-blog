@@ -1,11 +1,12 @@
-#  GoBlog - 高性能博客系统
+# 🚀 GoBlog - 高性能博客系统
 
-基于 Go 语言和 Gin 框架构建的高性能博客系统，采用现代化技术栈，支持文章管理、用户认证、汇率查询等功能。
+基于 Go 语言和 Gin 框架构建的高性能博客系统，采用现代化技术栈，支持文章管理、用户认证、汇率查询等功能，集成了高效的分页工具和缓存策略。
 
 ## ✨ 技术特性
 
 - 🔐 **JWT 认证** - 基于 JWT 的无状态用户认证
 - 🚀 **高性能缓存** - Redis 缓存策略，防止缓存击穿
+- 📃 **智能分页** - 自定义 GORM Scopes 分页工具，支持条件查询和排序
 - 🛡️ **并发安全** - 原子操作和双重检查锁定模式
 - 🎯 **RESTful API** - 标准化的 REST API 设计
 - 🔧 **配置管理** - 基于 Viper 的灵活配置系统
@@ -32,10 +33,17 @@
 go_test/
 ├── 📁 config/           # 配置管理
 ├── 📁 controller/       # 控制器层
+│   ├── auth_controller.go         # 用户认证
+│   ├── article_controller.go      # 文章管理
+│   ├── article_like_controller.go # 点赞系统
+│   └── exchange_rate_controller.go # 汇率查询
 ├── 📁 model/           # 数据模型
 ├── 📁 middleware/      # 中间件
 ├── 📁 router/          # 路由管理
 ├── 📁 utils/           # 工具函数
+│   ├── pagination.go  # 🆕 分页工具
+│   ├── jwt.go         # JWT 工具
+│   └── password.go    # 密码工具
 ├── 📁 global/          # 全局变量
 ├── 📁 sql/             # SQL脚本
 └── main.go            # 应用入口
@@ -50,6 +58,8 @@ go_test/
 
 ### 📝 文章管理系统
 - 文章的 CRUD 操作
+- **🆕 智能分页查询** - 支持条件查询、排序和分页
+- **🆕 搜索功能** - 全文搜索并支持分页
 - Redis 缓存策略
 - 防缓存击穿机制
 
@@ -93,6 +103,29 @@ func InitDB(db *gorm.DB) {
 }
 ```
 
+## 📃 分页工具设计
+
+### 高效分页实现
+```go
+// 自定义 GORM Scopes 分页
+type Paginate struct {
+    Page     int    `json:"page"`
+    PageSize int    `json:"page_size"`
+    Total    int64  `json:"total"`
+    Order    string `json:"order,omitempty"`
+}
+
+// 使用示例
+paginate := utils.PaginateFromContext(ctx)
+utils.PaginateWithTotal(global.DB, &model.Article{}, paginate, &articles)
+```
+
+### 分页特性
+- **智能参数解析** - 从请求上下文自动解析分页参数
+- **条件查询支持** - 保持 WHERE 条件的分页查询
+- **排序集成** - 支持动态排序参数
+- **性能优化** - 避免重复查询，优化 COUNT 和数据查询
+
 ## 🛠️ 快速开始
 
 1. **克隆项目**
@@ -106,18 +139,18 @@ cd goblog
 go mod tidy
 ```
 
-3**启动数据库**
+3. **启动数据库**
 ```bash
-启动mysql及redis
+# 启动 MySQL 和 Redis
+docker-compose up -d  # 如果使用 Docker
 ```
 
-3. **配置环境**
+4. **配置环境**
 ```bash
 # 修改 config/config.yml 配置文件
-
 ```
 
-4. **启动服务**
+5. **启动服务**
 ```bash
 go run main.go
 ```
@@ -125,9 +158,23 @@ go run main.go
 ## 📊 性能优化
 
 - **缓存策略**: Redis 缓存减少数据库查询
+- **分页优化**: 基于 GORM Scopes 的高效分页实现
 - **连接池**: 数据库和 Redis 连接池优化
 - **原子操作**: 无锁配置读取，高性能并发
 - **中间件优化**: 最小化中间件开销
+
+## 🔍 技术亮点
+
+### 分页工具的技术优势
+- **代码复用性** - 单一分页工具支持所有查询场景
+- **类型安全** - 基于 Go 强类型系统的参数验证
+- **性能优化** - 避免不必要的数据库查询
+- **扩展性强** - 支持复杂条件查询和动态排序
+
+### 缓存策略优化
+- **缓存击穿防护** - 使用互斥锁防止缓存击穿
+- **双重检查锁** - 减少锁竞争提升性能
+- **原子操作** - 避免数据竞态条件
 
 ## 📄 许可证
 

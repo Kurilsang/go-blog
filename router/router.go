@@ -59,6 +59,12 @@ func RegisterRoutes(r *gin.Engine) {
 		biz.POST("/article", controller.CreateArticle)
 		// GET http://localhost:8080/api/biz/article
 		biz.GET("/article", controller.GetArticles)
+		// GET http://localhost:8080/api/biz/article/pagination
+		biz.GET("/article/pagination", controller.GetArticlesWithPagination)
+		// GET http://localhost:8080/api/biz/article/search
+		biz.GET("/article/search", controller.SearchArticles)
+		// DELETE http://localhost:8080/api/biz/article/batch
+		biz.DELETE("/article/batch", controller.BatchDeleteArticles)
 		// GET http://localhost:8080/api/biz/article/:id
 		biz.GET("/article/:id", controller.GetArticleByID)
 		// 文章点赞相关接口
