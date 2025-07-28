@@ -17,6 +17,17 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	// 如果没有指定角色，默认为普通用户
+	if user.Role == "" {
+		user.Role = global.RoleUser
+	}
+
+	// 验证角色是否有效
+	if user.Role != global.RoleAdmin && user.Role != global.RoleUser {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色参数无效，只能是admin或user"})
+		return
+	}
+
 	// 对密码进行加密
 	hashedPassword, err := utils.HashPassword(user.Password)
 	if err != nil {
@@ -32,7 +43,7 @@ func Register(c *gin.Context) {
 	}
 
 	// 生成JWT令牌并返回
-	generateAndReturnToken(c, user.Username)
+	generateAndReturnToken(c, user.Username, user.Role)
 }
 
 // Login 用户登录
@@ -57,12 +68,12 @@ func Login(c *gin.Context) {
 	}
 
 	// 生成JWT令牌并返回
-	generateAndReturnToken(c, user.Username)
+	generateAndReturnToken(c, user.Username, user.Role)
 }
 
 // 生成JWT令牌并返回
-func generateAndReturnToken(c *gin.Context, username string) {
-	token, err := utils.GenerateJWT(username)
+func generateAndReturnToken(c *gin.Context, username, role string) {
+	token, err := utils.GenerateJWT(username, role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
 		return
@@ -70,6 +81,7 @@ func generateAndReturnToken(c *gin.Context, username string) {
 
 	c.JSON(http.StatusOK, AuthResponse{
 		Username: username,
+		Role:     role,
 		Token:    token,
 		Message:  "操作成功",
 	})

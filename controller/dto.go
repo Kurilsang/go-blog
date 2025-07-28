@@ -9,6 +9,7 @@ type LoginRequest struct {
 
 type AuthResponse struct {
 	Username string `json:"username"`
+	Role     string `json:"role"`
 	Token    string `json:"token"`
 	Message  string `json:"message"`
 }

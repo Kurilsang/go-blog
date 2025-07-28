@@ -296,7 +296,8 @@ func GetArticlesWithPagination(ctx *gin.Context) {
 // 批量删除文章
 func BatchDeleteArticles(ctx *gin.Context) {
 	var req struct {
-		IDs []uint `json:"ids" binding:"required"`
+		IDs        []uint `json:"ids" binding:"required"`
+		HardDelete bool   `json:"hard_delete,omitempty"` // 是否硬删除，默认false（软删除）
 	}
 
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -309,36 +310,69 @@ func BatchDeleteArticles(ctx *gin.Context) {
 		return
 	}
 
-	// 验证ID是否都存在
+	// 验证ID是否都存在（软删除的记录也算存在）
 	var count int64
-	if err := global.DB.Model(&model.Article{}).Where("id IN ?", req.IDs).Count(&count).Error; err != nil {
+	query := global.DB.Model(&model.Article{})
+	if !req.HardDelete {
+		// 软删除模式：只查询未被软删除的记录
+		query = query.Where("deleted_at IS NULL")
+	} else {
+		// 硬删除模式：查询所有记录（包括已软删除的）
+		query = query.Unscoped()
+	}
+
+	if err := query.Where("id IN ?", req.IDs).Count(&count).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	if int(count) != len(req.IDs) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("部分文章不存在，请求删除%d个，实际存在%d个", len(req.IDs), count)})
+		deleteType := "软删除"
+		if req.HardDelete {
+			deleteType = "硬删除"
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("部分文章不存在或已被删除，请求%s %d个，实际可%s %d个",
+				deleteType, len(req.IDs), deleteType, count),
+		})
 		return
 	}
 
-	// 执行批量删除
-	if err := global.DB.Where("id IN ?", req.IDs).Delete(&model.Article{}).Error; err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败: " + err.Error()})
+	// 执行删除操作
+	var deleteQuery *gorm.DB
+	var deleteType string
+
+	if req.HardDelete {
+		// 硬删除：彻底从数据库中删除记录
+		deleteQuery = global.DB.Unscoped().Where("id IN ?", req.IDs).Delete(&model.Article{})
+		deleteType = "硬删除"
+	} else {
+		// 软删除：只设置deleted_at字段（GORM默认行为）
+		deleteQuery = global.DB.Where("id IN ?", req.IDs).Delete(&model.Article{})
+		deleteType = "软删除"
+	}
+
+	if err := deleteQuery.Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("%s失败: %s", deleteType, err.Error())})
 		return
 	}
 
 	// 清除缓存以确保数据一致性
 	if err := global.RedisDB.Del(articleCtxRedis, cacheKey).Err(); err != nil {
-		// 删除成功但清除缓存失败，记录错误但不影响删除操作
-		fmt.Printf("警告: 删除文章成功但清除全量缓存失败: %v\n", err)
+		fmt.Printf("警告: %s文章成功但清除全量缓存失败: %v\n", deleteType, err)
 	}
 	// 清除所有分页相关缓存
 	clearPaginationCache()
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"message":       fmt.Sprintf("成功删除%d篇文章", len(req.IDs)),
+		"message":       fmt.Sprintf("成功%s %d篇文章", deleteType, len(req.IDs)),
+		"delete_type":   deleteType,
 		"deleted_ids":   req.IDs,
 		"deleted_count": len(req.IDs),
+		"note": map[string]string{
+			"soft_delete": "软删除：数据仍在数据库中，只是标记为已删除，可以恢复",
+			"hard_delete": "硬删除：数据从数据库中彻底删除，无法恢复",
+		},
 	})
 }
 

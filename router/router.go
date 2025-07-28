@@ -30,45 +30,66 @@ func RegisterRoutes(r *gin.Engine) {
 		// POST http://localhost:8080/api/auth/login
 		auth.POST("/login", controller.Login)
 
-		// 业务相关接口（需要JWT拦截器）
+		// 普通用户可访问的接口（只需要基础认证）
+		user := api.Group("/user", middleware.AuthMiddleware())
+		{
+			// 文章查看相关接口
+			// GET http://localhost:8080/api/user/article
+			user.GET("/article", controller.GetArticles)
+			// GET http://localhost:8080/api/user/article/pagination - 支持可选关键词搜索
+			user.GET("/article/pagination", controller.GetArticlesWithPagination)
+			// GET http://localhost:8080/api/user/article/:id
+			user.GET("/article/:id", controller.GetArticleByID)
+
+			// 文章点赞相关接口
+			// POST http://localhost:8080/api/user/article/:id/like
+			user.POST("/article/:id/like", controller.LikeArticle)
+			// GET http://localhost:8080/api/user/article/:id/like
+			user.GET("/article/:id/like", controller.GetArticleLikes)
+
+			// 汇率查看接口
+			// GET http://localhost:8080/api/user/rate
+			user.GET("/rate", controller.GetExchangeRates)
+		}
+
+		// 管理员专用接口（需要管理员权限）
+		admin := api.Group("/admin", middleware.AdminOnlyMiddleware())
+		{
+			// 普通管理操作（使用JWT验证）
+			// POST http://localhost:8080/api/admin/article
+			admin.POST("/article", controller.CreateArticle)
+			// POST http://localhost:8080/api/admin/rate
+			admin.POST("/rate", controller.CreateExchangeRate)
+		}
+
+		// 敏感操作接口（需要数据库实时验证）
+		sensitive := api.Group("/admin/sensitive", middleware.SensitiveAdminMiddleware())
+		{
+			// 敏感操作：删除数据（查询数据库验证权限）
+			// DELETE http://localhost:8080/api/admin/sensitive/article/batch
+			sensitive.DELETE("/article/batch", controller.BatchDeleteArticles)
+		}
+
+		// 保持向后兼容的业务接口（使用原有的全局中间件）
 		biz := api.Group("/biz", middleware.GlobalMiddleware())
-		// GET http://localhost:8080/api/biz/hello
-		biz.GET("/hello", func(c *gin.Context) {
-			c.JSON(200, gin.H{
-				"name": config.GetAppConfig().Name,
-				"port": config.GetAppConfig().Port,
+		{
+			// GET http://localhost:8080/api/biz/hello
+			biz.GET("/hello", func(c *gin.Context) {
+				c.JSON(200, gin.H{
+					"name": config.GetAppConfig().Name,
+					"port": config.GetAppConfig().Port,
+				})
 			})
-		})
-		// GET http://localhost:8080/api/biz/info
-		biz.GET("/info", func(c *gin.Context) {
-			c.JSON(200, gin.H{
-				"host":     config.GetDBConfig().Host,
-				"port":     config.GetDBConfig().Port,
-				"user":     config.GetDBConfig().User,
-				"password": config.GetDBConfig().Password,
-				"name":     config.GetDBConfig().Name,
+			// GET http://localhost:8080/api/biz/info
+			biz.GET("/info", func(c *gin.Context) {
+				c.JSON(200, gin.H{
+					"host":     config.GetDBConfig().Host,
+					"port":     config.GetDBConfig().Port,
+					"user":     config.GetDBConfig().User,
+					"password": config.GetDBConfig().Password,
+					"name":     config.GetDBConfig().Name,
+				})
 			})
-		})
-		// 汇率相关接口
-		// POST http://localhost:8080/api/biz/rate
-		biz.POST("/rate", controller.CreateExchangeRate)
-		// GET http://localhost:8080/api/biz/rate
-		biz.GET("/rate", controller.GetExchangeRates)
-		// 文章相关接口
-		// POST http://localhost:8080/api/biz/article
-		biz.POST("/article", controller.CreateArticle)
-		// GET http://localhost:8080/api/biz/article
-		biz.GET("/article", controller.GetArticles)
-		// GET http://localhost:8080/api/biz/article/pagination - 支持可选关键词搜索
-		biz.GET("/article/pagination", controller.GetArticlesWithPagination)
-		// DELETE http://localhost:8080/api/biz/article/batch
-		biz.DELETE("/article/batch", controller.BatchDeleteArticles)
-		// GET http://localhost:8080/api/biz/article/:id
-		biz.GET("/article/:id", controller.GetArticleByID)
-		// 文章点赞相关接口
-		// POST http://localhost:8080/api/biz/article/:id/like
-		biz.POST("/article/:id/like", controller.LikeArticle)
-		// GET http://localhost:8080/api/biz/article/:id/like
-		biz.GET("/article/:id/like", controller.GetArticleLikes)
+		}
 	}
 }

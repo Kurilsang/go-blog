@@ -39,3 +39,15 @@ const (
 const (
 	DefaultOrder = "created_at DESC"
 )
+
+// 用户角色常量
+const (
+	RoleAdmin = "admin"
+	RoleUser  = "user"
+)
+
+// 用户状态常量
+const (
+	UserStatusActive   = "active"
+	UserStatusDisabled = "disabled"
+)
