@@ -1,23 +1,20 @@
 package controller
 
 import (
-	"go_test/global"
+	"go_test/service"
 	"net/http"
 
-	"context"
-
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
 )
 
-var likeCtxRedis = context.Background()
+var articleLikeService = service.NewArticleLikeService()
 
 // LikeArticle 给文章点赞
 func LikeArticle(ctx *gin.Context) {
 	articleID := ctx.Param("id")
-	likeKey := "article:" + articleID + ":likes"
 
-	if err := global.RedisDB.Incr(likeCtxRedis, likeKey).Err(); err != nil {
+	err := articleLikeService.LikeArticle(articleID)
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -28,13 +25,9 @@ func LikeArticle(ctx *gin.Context) {
 // GetArticleLikes 获取文章点赞数量
 func GetArticleLikes(ctx *gin.Context) {
 	articleID := ctx.Param("id")
-	likeKey := "article:" + articleID + ":likes"
 
-	likes, err := global.RedisDB.Get(likeCtxRedis, likeKey).Result()
-
-	if err == redis.Nil {
-		likes = "0"
-	} else if err != nil {
+	likes, err := articleLikeService.GetArticleLikes(articleID)
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

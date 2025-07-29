@@ -106,7 +106,6 @@ func parseTokenFromRequest(c *gin.Context) (*utils.UserClaims, error) {
 	return utils.ParseJWT(tokenString)
 }
 
-// authMiddleware 通用认证中间件，使用组合的验证器
 func authMiddleware(validators ...Validator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 1. 基础JWT认证
@@ -121,17 +120,24 @@ func authMiddleware(validators ...Validator) gin.HandlerFunc {
 			return
 		}
 
-		// 2. 初始化认证上下文
+		// 2. 验证JWT中必须包含用户ID
+		if userClaims.UserID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token格式无效，请重新登录"})
+			c.Abort()
+			return
+		}
+
+		// 3. 初始化认证上下文
 		authCtx := &AuthContext{
 			UserClaims: userClaims,
 			UserInfo: &UserInfo{
 				Username: userClaims.Username,
 				Role:     userClaims.Role,
-				UserID:   0, // JWT中默认没有用户ID
+				UserID:   userClaims.UserID,
 			},
 		}
 
-		// 3. 依次执行所有验证器
+		// 4. 依次执行所有验证器
 		for _, validator := range validators {
 			if err := validator.Validate(authCtx); err != nil {
 				// 根据错误类型返回不同的状态码
@@ -145,12 +151,10 @@ func authMiddleware(validators ...Validator) gin.HandlerFunc {
 			}
 		}
 
-		// 4. 将最终的用户信息存入上下文
+		// 5. 将最终的用户信息存入上下文
 		c.Set("username", authCtx.UserInfo.Username)
-		c.Set("role", authCtx.UserInfo.Role)
-		if authCtx.UserInfo.UserID > 0 {
-			c.Set("user_id", authCtx.UserInfo.UserID)
-		}
+		c.Set("userRole", authCtx.UserInfo.Role)
+		c.Set("userID", authCtx.UserInfo.UserID)
 		c.Next()
 	}
 }
